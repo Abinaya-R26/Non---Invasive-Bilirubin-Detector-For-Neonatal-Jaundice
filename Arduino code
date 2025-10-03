@@ -1,0 +1,118 @@
+#include <Wire.h>
+#include <Adafruit_TCS34725.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
+
+// OLED setup
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// TCS34725 setup
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
+// Control flag
+bool runDetection = false;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("OLED init failed"));
+    while (1);
+  }
+
+  // Initialize TCS34725
+  if (!tcs.begin()) {
+    Serial.println("No TCS34725 found ... check wiring?");
+    while (1);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("System Ready.");
+  display.setCursor(0, 10);
+  display.print("Waiting for Neonate   Skin Recognition...");
+  display.display();
+}
+
+void loop() {
+  // Wait for serial trigger from MATLAB
+  if (Serial.available()) {
+    char signal = Serial.read();
+    if (signal == 'N') {
+      runDetection = true;
+    }
+  }
+
+  if (!runDetection) {
+    delay(200);
+    return;
+  }
+
+  // Read color data
+  uint16_t r, g, b, c;
+  float bilirubinIndex;
+  String riskLevel;
+
+  tcs.getRawData(&r, &g, &b, &c);
+
+  if (c < 50) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.print("Place skin near");
+    display.setCursor(0, 10);
+    display.print("the sensor...");
+    display.display();
+    delay(1000);
+    return;
+  }
+
+  // Normalize RGB values
+  float sum = r + g + b;
+  float normR = (float)r / sum * 255;
+  float normG = (float)g / sum * 255;
+  float normB = (float)b / sum * 255;
+
+  // Bilirubin index formula
+  bilirubinIndex = (normR - normB) + (normG * 0.2);
+  if (bilirubinIndex > 50) bilirubinIndex = 50;
+
+  // Risk classification
+  if (bilirubinIndex < 5) {
+    riskLevel = "Low Risk";
+  } else if (bilirubinIndex < 20) {
+    riskLevel = "Mild Risk";
+  } else {
+    riskLevel = "High Risk";
+  }
+
+  String phototherapy_status = (bilirubinIndex >= 13.0) ? "Yes" : "No";
+
+  // Debug Output
+  Serial.print(r); Serial.print(",");
+  Serial.print(g); Serial.print(",");
+  Serial.print(b); Serial.print(",");
+  Serial.print(bilirubinIndex, 2); Serial.print(",");
+  Serial.print(riskLevel); Serial.print(",");
+  Serial.println(phototherapy_status);
+
+  // Display result
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);   display.print("R:"); display.print(r);
+  display.setCursor(64, 0);  display.print("G:"); display.print(g);
+  display.setCursor(0, 10);  display.print("B:"); display.print(b);
+  display.setCursor(0, 20);  display.print("Index:"); display.print(bilirubinIndex, 1); display.print(" mg/dL");
+  display.setCursor(0, 30);  display.print("Risk: "); display.print(riskLevel);
+  display.setCursor(0, 40);  display.print("Phototherapy: "); display.print(phototherapy_status);
+  display.display();
+
+  delay(1500);
+}
