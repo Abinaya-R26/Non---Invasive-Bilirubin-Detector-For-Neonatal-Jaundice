@@ -1,0 +1,187 @@
+% Initialize webcam
+cam = webcam;
+
+% Initialize Serial Communication with Arduino
+arduino = serialport("COM5", 9600); % Replace COM5 with your Arduino port
+
+% Skin detection thresholds for neonatal skin in YCbCr
+neonatal_Cb_range = [85 115];  % Neonatal Cb range
+neonatal_Cr_range = [135 165]; % Neonatal Cr range
+
+% General skin detection mask range
+skin_Cb_range = [77 127];
+skin_Cr_range = [133 173];
+
+% Control flag to avoid repeated triggers
+wasNeonatal = false;
+
+while true
+    % Capture a frame from the webcam
+    frame = snapshot(cam);
+    
+    % Convert to YCbCr color space
+    ycbcrFrame = rgb2ycbcr(frame);
+    Cb = ycbcrFrame(:,:,2);
+    Cr = ycbcrFrame(:,:,3);
+    
+    % Generic skin detection mask
+    skinMask = (Cb >= skin_Cb_range(1)) & (Cb <= skin_Cb_range(2)) & ...
+               (Cr >= skin_Cr_range(1)) & (Cr <= skin_Cr_range(2));
+    
+    % Apply skin mask
+    skinRegion = frame;
+    skinRegion(repmat(~skinMask, [1, 1, 3])) = 0;
+
+    % Mean chrominance in skin region
+    skinCb = double(Cb(skinMask));
+    skinCr = double(Cr(skinMask));
+    
+    meanCb = mean(skinCb);
+    meanCr = mean(skinCr);
+
+    % Check for neonatal skin detection
+    isNeonatal = meanCb >= neonatal_Cb_range(1) && meanCb <= neonatal_Cb_range(2) && ...
+                 meanCr >= neonatal_Cr_range(1) && meanCr <= neonatal_Cr_range(2);
+
+    % Trigger logic
+   if isNeonatal
+    if ~wasNeonatal
+        % Step 1: Trigger Arduino only once
+        write(arduino, 'N', 'char');
+        wasNeonatal = true;
+
+        % Step 2: Show initializing message
+        initFrame = insertText(skinRegion, [10, 10], ...
+            'Initializing Bilirubin Detector...', ...
+            'FontSize', 18, 'BoxColor', [0 0 1], 'TextColor', 'white');
+        imshow(initFrame);
+        title('Initializing Bilirubin Detector...');
+        drawnow;
+        pause(2);  % simulate initialization time
+
+        % Step 3: Display final message and turn off camera
+        label = 'Neonatal Skin Detected - Stopping Camera';
+        finalFrame = insertText(skinRegion, [10, 10], label, ...
+            'FontSize', 18, 'BoxColor', [0.2 0.8 0.2], 'TextColor', 'white');
+        imshow(finalFrame);
+        title(label);
+        drawnow;
+
+        % Step 4: Turn off camera and exit
+        clear cam;  % Release webcam
+        break;      % Exit loop
+    end
+else
+    % Adult skin detected - continue processing
+    label = 'Adult Skin Detected';
+    color = [1 0 0]; % Red
+    wasNeonatal = false; % Reset flag
+end
+    % Annotate frame with current label
+    annotatedFrame = insertText(skinRegion, [10, 10], label, ...
+        'FontSize', 18, 'BoxColor', color, 'TextColor', 'white');
+
+    % Display frame
+    imshow(annotatedFrame);
+    title(label);
+    drawnow;
+end
+
+% After detecting neonatal skin and triggering Arduino
+
+
+% Initialize data arrays
+r_vals = [];
+g_vals = [];
+b_vals = [];
+bilirubin_vals = [];
+
+% Read 15 samples from sensor
+for i = 1:15
+    line = readline(arduino);
+    data = strsplit(line, ',');
+    if length(data) >= 4
+        r_vals(end+1) = str2double(data{1});
+        g_vals(end+1) = str2double(data{2});
+        b_vals(end+1) = str2double(data{3});
+        bilirubin_vals(end+1) = str2double(data{4});
+    end
+end
+ 
+figure;
+plot(r_vals, '-or', 'LineWidth', 1.5); hold on;
+plot(g_vals, '-og', 'LineWidth', 1.5);
+plot(b_vals, '-ob', 'LineWidth', 1.5);
+xlabel('Sample #');
+ylabel('Intensity');
+title('RGB Values of Detected Level');
+legend('Red','Green','Blue');
+grid on;
+
+% Normalize and convert to HSV
+rgb_norm = [r_vals(:), g_vals(:), b_vals(:)] / 255;
+hsv = rgb2hsv(rgb_norm);
+
+hue = hsv(:,1);
+saturation = hsv(:,2);
+value = hsv(:,3);
+
+figure;
+plot(hue, '-r', 'LineWidth', 1.5); hold on;
+plot(saturation, '-g', 'LineWidth', 1.5);
+plot(value, '-b', 'LineWidth', 1.5);
+xlabel('Sample #');
+ylabel('HSV Value');
+title('HSV of Detected Level');
+legend('Hue', 'Saturation', 'Brightness');
+grid on;
+
+% Display averages
+fprintf('\nAverage Hue: %.3f\n', mean(hue));
+fprintf('Average Saturation: %.3f\n', mean(saturation));
+fprintf('Average Brightness: %.3f\n', mean(value));
+
+figure;
+plot(bilirubin_vals, '-o', 'LineWidth', 1.5);
+xlabel('Sample #');
+ylabel('Bilirubin Index (mg/dL)');
+title('Bilirubin Index Over Time');
+avg_bilirubin = mean(bilirubin_vals);
+yline(avg_bilirubin, '--r', ['Mean = ' num2str(avg_bilirubin, '%.2f')]);
+legend('Bilirubin Value', 'Average');
+grid on;
+
+figure;
+scatter3(hue, saturation, value, 100, 'filled');
+xlabel('Hue');
+ylabel('Saturation');
+zlabel('Value');
+title('3D HSV Histogram');
+grid on;
+
+% Create 3D RGB histogram
+figure;
+scatter3(r_vals, g_vals, b_vals, 100, 'filled');
+xlabel('Red');
+ylabel('Green');
+zlabel('Blue');
+title('3D RGB Histogram');
+grid on;
+
+% After reading bilirubin values from sensor (assuming bilirubin_vals is already populated)
+avg_bilirubin = mean(bilirubin_vals);
+
+% Display the average bilirubin concentration
+fprintf('Average Bilirubin Concentration: %.2f mg/dL\n', avg_bilirubin);
+
+% Calculate phototherapy duration based on average bilirubin concentration
+if avg_bilirubin < 15
+    phototherapy_duration = 6;  % Duration in hours for concentration < 15 mg/dL
+    fprintf('Phototherapy Duration: %d hours\n', phototherapy_duration);
+elseif avg_bilirubin >= 15 && avg_bilirubin < 20
+    phototherapy_duration = 12;  % Duration in hours for 15 <= concentration < 20 mg/dL
+    fprintf('Phototherapy Duration: %d hours\n', phototherapy_duration);
+else
+    phototherapy_duration = 24;  % Duration in hours for concentration >= 20 mg/dL
+    fprintf('Phototherapy Duration: %d hours\n', phototherapy_duration);
+end
