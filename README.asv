@@ -1,0 +1,26 @@
+ABSTRACT : 
+—Neonatal jaundice is one of the most 
+common conditions affecting newborns worldwide. It 
+results from elevated levels of bilirubin in the blood, 
+often leading to visible yellowing of the skin and eyes. 
+Early identification is crucial to avoid complications 
+such as kernicterus or neurological damage. In this 
+study, we propose a simple and cost-effective method 
+for detecting signs of jaundice using a combination of 
+camera-based imaging and basic color analysis. By 
+capturing live skin images and analyzing them in color 
+spaces such as YCbCr, RGB, and HSV, the system can 
+differentiate between normal and jaundiced skin 
+tones without invasive testing. When jaundice is 
+detected, a signal is sent to an Arduino controller to 
+activate an LED indicator, simulating the initiation of 
+phototherapy treatment. The approach aims to offer 
+a non-invasive, real-time screening tool, particularly 
+useful in resource-limited settings where access to 
+laboratory testing is delayed or unavailable. Our 
+system is designed to assist healthcare workers and 
+parents by providing an early warning, ensuring 
+timely medical attention. Through careful calibration 
+and analysis, this method demonstrates potential for 
+improving neonatal care by making jaundice 
+detection more accessible, affordable, and rapid. 
